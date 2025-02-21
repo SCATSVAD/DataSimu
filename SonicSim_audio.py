@@ -68,10 +68,10 @@ def normalize(audio, norm='peak'):
 
 def lufs_norm(data, sr, norm=-6):
     block_size = 0.4 if len(data) / sr >= 0.4 else len(data) / sr
-    # measure the loudness first 测量音频的整体响度
+    # measure the loudness first 
     meter = pyln.Meter(rate=sr, block_size=block_size)
     loudness = meter.integrated_loudness(data)
-    if math.isinf(loudness):   # 如果响度是无穷的话
+    if math.isinf(loudness):  
         loudness = -40
         print("loudness is inf")
 
@@ -233,30 +233,29 @@ def get_random_wav_path_from_json(
 def get_random_dt(dt, audio_path_list, sample_rate):
     num_samples = int(dt * sample_rate)
     current_duration = torch.zeros((1, num_samples))
-    start = 0    # 赋值的起始索引
+    start = 0    
     while num_samples > 0:
         audio_path = random.choice(audio_path_list)
         waveform, sr = torchaudio.load(audio_path)
-        # 去除音频中的0采样点
+        # remove the zero value
         waveform = tool_utils.remove_silent_samples(waveform)
         wav_samples = waveform.shape[-1]
         if wav_samples == 0:
             continue
-        # waveform 是 (1, nums)格式
-        # sr不一样才需要重采样
+
         if sr != sample_rate:
             resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=sample_rate)
             waveform = resampler(waveform)
-        # 如果dt过长则需要累计凑齐
+
         if wav_samples < num_samples:
             current_duration[:,start: start+wav_samples] = waveform
-            start = start + wav_samples  # 更新赋值的起始索引
+            start = start + wav_samples 
             num_samples = num_samples - wav_samples
         else:
             rand_start = random.randint(0, wav_samples - num_samples)
             current_duration[:, start: start+num_samples] = waveform[:, rand_start:rand_start + num_samples]
             num_samples = 0
-    # 必须全都是非0采样点才能算有效片段
+
     assert torch.all(current_duration), 'Error: got some zero signal'
 
     return current_duration
@@ -270,15 +269,9 @@ def create_long_audio(audio_path: str, length: float, sample_rate: int = 16000) 
         length: Length of the long audio signal.
 
     Returns: Long audio signal.
-    long_audio:一个 torch.Tensor 类型的长音频信号,其形状为 (1, int(length * sample_rate))
-    其中 1 表示单声道音频,int(length * sample_rate) 表示音频信号的总采样点数,等于长音频信号的长度乘以采样率。
-    start_end_points:一个列表,包含每个被拼接到长音频中的音频信号的起始和结束采样点索引。
-    每个元素是一个元组 (start, end),表示该音频信号在长音频中的起始采样点索引 start 和结束采样点索引 end。
-    audio_name_list:一个列表,包含被拼接到长音频中的每个音频信号的文件名。这些文件名与 start_end_points 中的索引相对应，
-    可以用于识别长音频中不同音频信号的来源。
     """
     print("create_long_audio: ", audio_path)
-    # import pdb; pdb.set_trace()
+
     audio_path_list = get_random_wav_path(audio_path, int(length * sample_rate))
     audio_name = [os.path.basename(audio_path_) for audio_path_ in audio_path_list]
     audios = []
@@ -298,7 +291,7 @@ def create_long_audio(audio_path: str, length: float, sample_rate: int = 16000) 
             break
         random_idx = random.randint(0, len(audios)-1)
         audio = audios[random_idx]
-        # 随机取最长十秒的录音
+
         silence = torch.zeros((1, random.randint(0, int(10 * sample_rate))), device=audio.device)
         audio = torch.cat([silence, audio], dim=-1)
         
@@ -316,9 +309,7 @@ def create_long_audio(audio_path: str, length: float, sample_rate: int = 16000) 
     return long_audio, start_end_points, audio_name_list
 
 def create_ali_audio(spk2path, length, rttm, sample_rate=16000):
-    """
-    构造类似Alimeeting中的音频,主要区别在于只需要指定说话人说话,说话内容可以重复
-    """
+
     spk = list(spk2path.keys())[0]
     audio_path = list(spk2path.values())[0]
     print("create_long_audio: ", audio_path)
@@ -343,9 +334,6 @@ def create_ali_audio(spk2path, length, rttm, sample_rate=16000):
                 file.write(reco)
             continue
         dt_signal = get_random_dt(dt, audio_path_list, sample_rate)
-        # print(f"start_index: {start_index}, sig_dt: {sig_dt}")  # 检查切片参数
-        # print(f"long_audio slice shape: {long_audio[:, start_index: start_index + sig_dt].shape}")  # 检查目标切片的尺寸
-        # print(f"dt_signal shape: {dt_signal.shape}")  # 检查源张量的尺寸
         long_audio[:, start_index: start_index + sig_dt] = dt_signal
         
     return long_audio
@@ -382,7 +370,6 @@ def create_background_audio(audio_path: str, length: float, sample_rate: int = 1
             break
         random_idx = random.randint(0, len(audios)-1)
         audio = audios[random_idx]
-        # import pdb; pdb.set_trace()
         if audio.shape[0] == 2:
             audio = audio.mean(dim=0, keepdim=True)
         
@@ -399,7 +386,6 @@ def create_background_audio(audio_path: str, length: float, sample_rate: int = 1
             try:
                 long_audio[:, random_start+current_duration:int(length * sample_rate) - random_end] += audio[:, random_start:int(length * sample_rate) - random_end - current_duration]
             except:
-                # import pdb; pdb.set_trace()
                 break
         
         if current_duration + audio.shape[-1] < int(length * sample_rate):
@@ -463,7 +449,7 @@ def generate_rir_combination(
         channel_order=channel_order
     )
     
-    ir_list = clip_all(ir_list)   # 按照最短音频长度切割以保持一致
+    ir_list = clip_all(ir_list)  
     num_channel = len(ir_list[0])
 
     # Reshape RIR

@@ -57,9 +57,7 @@ def convolve_fixed_receiver(
     Returns:
     - Convolved audio signal of shape (num_channels, audio_len)
     """
-    # 注意传入的rirs是(bs, num_positions, num_channels, ir_length)
-    print(rirs.shape)
-    print(source_audio.shape)
+
     if len(rirs.shape) == 4:
         rirs = rirs.squeeze(0).squeeze(0)
     reverb_wav = signal.fftconvolve(source_audio.reshape(1, -1), rirs, mode="full")[:, : source_audio.shape[-1]]

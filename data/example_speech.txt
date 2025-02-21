@@ -1,0 +1,4 @@
+/path/to/librispeech/dev-clean/5338
+/path/to/librispeech/dev-clean/3000
+/path/to/librispeech/dev-clean/2412
+/path/to/librispeech/dev-clean/6241

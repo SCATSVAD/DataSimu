@@ -172,7 +172,7 @@ class Scene:
         self.aihabitat['sensor_height'] = 1.5
         self.aihabitat['height'] = image_size[0]
         self.aihabitat['width'] = image_size[1]
-        self.aihabitat['hfov'] = hfov # 视觉传感器所使用的视场范围。
+        self.aihabitat['hfov'] = hfov 
 
         # Set acoustics config for soundspaces
         self.acoustic_config = {}
@@ -217,13 +217,12 @@ class Scene:
         backend_cfg = habitat_sim.SimulatorConfiguration()
         backend_cfg.scene_id = f'mp3d/{self.room}/{self.room}.glb'
         backend_cfg.scene_dataset_config_file = 'SonicSet/material/mp3d.scene_dataset_config.json'
-        backend_cfg.load_semantic_mesh = True  # 启用了语义网格加载（通常用于语义分割任务）
-        backend_cfg.enable_physics = False     # 禁用了物理仿真（该场景不涉及动态物理交互）
+        backend_cfg.load_semantic_mesh = True 
+        backend_cfg.enable_physics = False    
 
-        # Set agent configuration 配置智能体（agent）的属性
+        # Set agent configuration 
         agent_config = habitat_sim.AgentConfiguration()
 
-        # 配置与视觉相关的传感器  没用上
         if self.include_visual_sensor:
             # Set color sensor
             rgb_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -231,7 +230,7 @@ class Scene:
             rgb_sensor_spec.sensor_type = habitat_sim.SensorType.COLOR
             rgb_sensor_spec.resolution = [self.aihabitat['height'], self.aihabitat['width']]
             rgb_sensor_spec.position = [0.0, self.aihabitat["sensor_height"], 0.0]
-            rgb_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE # “针孔”（Pinhole）相机模型
+            rgb_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE 
             rgb_sensor_spec.hfov = self.aihabitat["hfov"]
             agent_config.sensor_specifications = [rgb_sensor_spec]
 
@@ -283,7 +282,7 @@ class Scene:
         audio_sensor_spec = habitat_sim.AudioSensorSpec()
         audio_sensor_spec.uuid = "audio_sensor"
         audio_sensor_spec.enableMaterials = True  # make sure _semantic.ply file is in the scene folder
-        # 原来写的是type报错,实际是channelType
+
         audio_sensor_spec.channelLayout.channelType = getattr(habitat_sim.sensor.RLRAudioPropagationChannelLayoutType, self.channel['type'])
         audio_sensor_spec.channelLayout.channelCount = self.channel_count  # ambisonics
 
@@ -624,7 +623,6 @@ def create_custom_arrayir(
     channel_order: int = 1
 ):
     """
-    生成一个房间场景中的多个麦克风阵列接收到的冲激响应
     Render impulse response for a source and receiver pair in the mp3d room.
     """
 
@@ -734,7 +732,6 @@ def render_rir_parallel(room_list, source_position_list, receiver_position_list,
                         batch_size=64, sample_rate=16000, use_default_material=False,
                         channel_type='Ambisonics', channel_order=1):
     """
-    在多个进程中并行计算房间冲激响应
     Run render_ir (or create_custom_arrayir) in parallel for all elements.
     """
     assert len(room_list) == len(source_position_list)
@@ -759,211 +756,6 @@ def render_rir_parallel(room_list, source_position_list, receiver_position_list,
 
     # 限制进程数，避免 CPU 过载
     num_workers = min(mp.cpu_count(), 8)
-    # 使用 torch.multiprocessing.Manager()
-    with mp.Manager() as manager:
-        # 允许在多个进程之间共享数据
-        ir_list = manager.list() 
-        # 创建一个进程池，进程池的大小为 CPU 核心数
-        with mp.Pool(num_workers) as pool:
-            for batch_idx in range(num_batches):
-                start_idx = batch_idx * batch_size
-                end_idx = min(start_idx + batch_size, num_points)
-
-                if is_return:
-                    batch = [
-                        (room_list[i], source_position_list[i], receiver_position_list[i], None, receiver_rotation_list[i]) 
-                        for i in range(start_idx, end_idx)
-                    ]
-                else:
-                    batch = [
-                        (room_list[i], source_position_list[i], receiver_position_list[i], filename_list[i], receiver_rotation_list[i])
-                        for i in range(start_idx, end_idx)
-                    ]
-
-                tasks = []
-                for room, source_position, receiver_position, filename, receiver_rotation in batch:
-                    # 异步提交任务到进程池
-                    if channel_type == "CustomArrayIR":
-                        task = pool.apply_async(create_custom_arrayir, 
-                                                args=(room, source_position, receiver_position, mic_array_list, filename, receiver_rotation, sample_rate, use_default_material, channel_order),
-                                                callback=update_progress)
-                    else:
-                        task = pool.apply_async(render_ir, 
-                                                args=(room, source_position, receiver_position, filename, receiver_rotation, sample_rate, use_default_material, channel_type, channel_order),
-                                                callback=update_progress)
-                    tasks.append(task)
-                # 如果为 True，则将计算得到的冲激响应添加到 ir_list 中，否则只等待任务完成。
-                for task in tasks:
-                    if is_return:
-                        ir = task.get().cpu()
-                        # 确保返回 CPU 张量
-                        ir_list.append(ir)
-                    else:
-                        task.get()
-
-        if is_return:
-            # 在返回前转换成普通列表，避免 manager 上下文关闭后再访问
-            return list(ir_list)
-
-##### 多GPU计算
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-def setup(rank, world_size):
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
-
-def cleanup():
-    dist.destroy_process_group()
-
-class IRRenderer(nn.Module):
-    def __init__(self, scene):
-        super(IRRenderer, self).__init__()
-        self.scene = scene
-
-    def forward(self, idx):
-        return self.scene.render_ir(idx)
-
-def render_ir_gpu(rank, world_size, room, source_position, receiver_position, filename=None, receiver_rotation=None, sample_rate=16000, use_default_material=False, channel_type='Ambisonics', channel_order=1):
-    setup(rank, world_size)
-
-    if receiver_rotation is None:
-        receiver_rotation = 90
-
-    # Create a receiver
-    receiver = Receiver(
-        position=receiver_position,
-        rotation=receiver_rotation,
-        sample_rate=sample_rate
-    )
-
-    # Create a source
-    source = Source(
-        position=source_position,
-        rotation=0,
-        dry_sound='',
-        device=torch.device(f'cuda:{rank}')
-    )
-
-    scene = Scene(
-        room,
-        [None],  # placeholder for source class
-        receiver=receiver,
-        source_list=[source],
-        include_visual_sensor=False,
-        device=torch.device(f'cuda:{rank}'),
-        use_default_material=use_default_material,
-        channel_type=channel_type,
-        channel_order=channel_order
-    )
-
-    # Wrap the scene in the IRRenderer model
-    ir_renderer = IRRenderer(scene).to(rank)
-    ir_renderer = DDP(ir_renderer, device_ids=[rank])
-
-    # Render IR
-    scene.add_audio_sensor()
-    ir = ir_renderer(0).detach().cpu()
-    scene.sim.close()
-
-    # Save file if dirname is given
-    if filename is not None:
-        torchaudio.save(filename, ir, sample_rate=sample_rate)
-    else:
-        return ir
-
-    cleanup()
-
-def create_custom_arrayir_gpu(rank, world_size, room, source_position, receiver_position, mic_array, filename=None, receiver_rotation=None, sample_rate=16000, use_default_material=False, channel_order=1):
-    setup(rank, world_size)
-
-    if receiver_rotation is None:
-        receiver_rotation = 90
-
-    # Create a source
-    source = Source(
-        position=source_position,
-        rotation=0,
-        dry_sound='',
-        device=torch.device(f'cuda:{rank}')
-    )
-    multi_channels = []
-    for mic_idx, mic in enumerate(mic_array):
-        # Create a receiver
-        receiver = Receiver(
-            position=receiver_position+mic,
-            rotation=receiver_rotation,
-            sample_rate=sample_rate
-        )
-        scene = Scene(
-            room,
-            [None],  # placeholder for source class
-            receiver=receiver,
-            source_list=[source],
-            include_visual_sensor=False,
-            device=torch.device(f'cuda:{rank}'),
-            use_default_material=use_default_material,
-            channel_type="Mono",
-            channel_order=channel_order
-        )
-        # Wrap the scene in the IRRenderer model
-        ir_renderer = IRRenderer(scene).to(rank)
-        ir_renderer = DDP(ir_renderer, device_ids=[rank])
-
-        # Render IR
-        scene.add_audio_sensor()
-        ir = ir_renderer(0).detach().cpu()
-        multi_channels.append(ir)
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        scene.sim.close()
-    # Save file if dirname is given
-    multi_channels = clip_all(multi_channels) 
-    multi_channels = torch.cat(multi_channels, dim=0)
-    if filename is not None:
-        torchaudio.save(filename, multi_channels, sample_rate=sample_rate)
-    else:
-        return multi_channels
-
-    cleanup()
-
-import torch.multiprocessing as mp
-
-def run(rank, world_size, room_list, source_position_list, receiver_position_list, mic_array_list=None, filename_list=None, receiver_rotation_list=None, sample_rate=16000, use_default_material=False, channel_type='Ambisonics', channel_order=1):
-    if channel_type == "CustomArrayIR":
-        create_custom_arrayir_gpu(rank, world_size, room_list[rank], source_position_list[rank], receiver_position_list[rank], mic_array_list[rank], filename_list[rank], receiver_rotation_list[rank], sample_rate, use_default_material, channel_order)
-    else:
-        render_ir_gpu(rank, world_size, room_list[rank], source_position_list[rank], receiver_position_list[rank], filename_list[rank], receiver_rotation_list[rank], sample_rate, use_default_material, channel_type, channel_order)
-
-def render_rir_parallel_gpu(room_list, source_position_list, receiver_position_list,
-                        mic_array_list=None, filename_list=None, receiver_rotation_list=None,
-                        batch_size=64, sample_rate=16000, use_default_material=False,
-                        channel_type='Ambisonics', channel_order=1):
-    """
-    在多个进程中并行计算房间冲激响应
-    Run render_ir (or create_custom_arrayir) in parallel for all elements.
-    """
-    assert len(room_list) == len(source_position_list)
-    assert len(source_position_list) == len(receiver_position_list)
-    
-    if filename_list is None:
-        # 表示不保存结果文件，函数将返回计算得到的冲激响应（IR）列表
-        is_return = True
-    else:
-        is_return = False
-
-    if receiver_rotation_list is None:
-        receiver_rotation_list = [0] * len(receiver_position_list)
-
-    num_points = len(source_position_list)  # 声源位置 固定时为1 移动时取值有多个
-    num_batches = (num_points + batch_size - 1) // batch_size
-
-    progress_bar = tqdm(total=num_points)  
-
-    def update_progress(*_):
-        progress_bar.update()
-
-    # 限制进程数，避免 CPU 过载
-    num_workers = min(mp.cpu_count(), 24)
     # 使用 torch.multiprocessing.Manager()
     with mp.Manager() as manager:
         # 允许在多个进程之间共享数据
@@ -1283,8 +1075,7 @@ def random_select_start_end_points(scene: Scene, distance_threshold: float = 5.0
         end_point = scene.sim.pathfinder.get_random_navigable_point()
         tries += 1
     return start_point, end_point
-# 主要目标是从一个导航场景中随机选择可导航的起点和终点，
-# 并通过 Habitat Sim (Habitat Simulator) 的路径规划工具生成一条从起点到终点的路径。
+
 def get_nav_idx(scene: Scene,
                 distance_threshold: float = 5.0
                 ) -> T.Tuple[int, int]:
@@ -1310,8 +1101,6 @@ def get_nav_point_from_grid_points(scene: Scene,
                                    ) -> T.List[T.Tuple[float, float, float]]:
     """
     Generate the num_points of navigation points from grid_points
-    距离至少两个网格点的水平距离小于 distance_threshold。
-    与网格点的垂直距离不超过 2 个单位。
     """
     
     unique_nav_points = []
