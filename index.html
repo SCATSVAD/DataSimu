@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频仿真展示</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        audio {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>音频仿真展示</h1>
+
+    <!-- 原始音频 -->
+    <div class="section">
+        <h2>原始音频（30秒，包含3个人）</h2>
+        <audio controls>
+            <source src="audio/original_audio.wav" type="audio/wav">
+            您的浏览器不支持音频播放。
+        </audio>
+    </div>
+
+    <!-- 加 RIR 后的音频 -->
+    <div class="section">
+        <h2>加 RIR 后的音频</h2>
+        <h3>第一个人</h3>
+        <audio controls>
+            <source src="audio/person1_rir.wav" type="audio/wav">
+            您的浏览器不支持音频播放。
+        </audio>
+        <h3>第二个人</h3>
+        <audio controls>
+            <source src="audio/person2_rir.wav" type="audio/wav">
+            您的浏览器不支持音频播放。
+        </audio>
+        <h3>第三个人</h3>
+        <audio controls>
+            <source src="audio/person3_rir.wav" type="audio/wav">
+            您的浏览器不支持音频播放。
+        </audio>
+    </div>
+
+    <!-- 混合后的音频 -->
+    <div class="section">
+        <h2>混合后的音频</h2>
+        <audio controls>
+            <source src="audio/mixed_audio.wav" type="audio/wav">
+            您的浏览器不支持音频播放。
+        </audio>
+    </div>
+
+    <!-- 说明 -->
+    <div class="section">
+        <h2>说明</h2>
+        <p>
+            本页面展示了音频仿真的结果：
+            <ul>
+                <li>原始音频：包含3个人的30秒音频。</li>
+                <li>加 RIR 后的音频：分别为每个人添加了房间脉冲响应（RIR）后的音频。</li>
+                <li>混合后的音频：将三个人的信号量相加后的结果。</li>
+            </ul>
+        </p>
+    </div>
+</body>
+</html>
