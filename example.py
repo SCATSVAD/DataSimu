@@ -33,7 +33,8 @@ def generate_all_channels_for_a_wav(scene, sample_rate, results_dir, noise_path,
         room,
         [None],  # placeholder for source class
         include_visual_sensor=False,
-        device=torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        device=torch.device('cpu')
+        # device=torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     )
     
     spks_nav_points = [SonicSim_rir.get_nav_idx(scene, distance_threshold=5.0) for _ in range(spk_num)]
@@ -91,6 +92,7 @@ def generate_all_channels_for_a_wav(scene, sample_rate, results_dir, noise_path,
         audios = []  # Collect all audio mixed with IR and mix to obtain overlapping speech
         for i in range(spk_num):
             receiver_audio = SonicSim_moving.convolve_fixed_receiver(source_audios[i], IRI_outputs[i])
+            torchaudio.save(f'{output_dir}/spk_{i}_{mic_config}.wav', torch.from_numpy(receiver_audio), sample_rate=sample_rate)
             # (channels, time)
             audios.append(torch.from_numpy(receiver_audio))
         # Get rir for noise and music
@@ -135,7 +137,7 @@ def generate_all_channels_for_a_wav(scene, sample_rate, results_dir, noise_path,
         mic_config = channel_type  # Mono/Binaural
         mix_ir_source(channel_type, mic_array_list, mic_config)
 
-    for c in [4,6,8]:
+    for c in [4]:
         for isLinear in [True, False]:
             channel_type, mic_array_list, rand_dist  = get_more_type_array(c,isLinear=isLinear)
             array = 'linear' if isLinear else 'circular'
@@ -267,7 +269,8 @@ if __name__ == "__main__":
                     remove_mic_recos.append('_'.join(r.split('_')[:-1]))
             reco2paths = [reco2path for reco2path in reco2paths if list(reco2path.keys())[0] not in remove_mic_recos]
             exist_spks, exist_scenes = remove_spks_and_scenes(results_dir, existed_reco)
-        
+            speech_list = [spk for spk in speech_list if spk not in exist_spks]
+            scene_list = [sc for sc in scene_list if sc not in exist_scenes]
 
         for idx, reco2path in enumerate(reco2paths):
             start_time = time.time()
